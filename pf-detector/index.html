@@ -1,0 +1,1395 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Point and Figure Pivot Detector</title>
+<script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+<style>
+  :root {
+    --navy: #1B2A4A;
+    --bluegray: #4A6B8A;
+    --lightblue: #D6E8F2;
+    --tan: #C4A882;
+    --tan-light: #F5EFE6;
+    --tan-deep: #a08660;
+    --ink: #14161a;
+    --paper: #FAF8F4;
+    --rule: #d9d2c5;
+    --green: #2d6a4f;
+    --green-light: #d8e8df;
+    --red: #b03a2e;
+    --red-light: #f3dad6;
+    --priceline: #c8c0ad;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: Georgia, 'Times New Roman', serif;
+    font-size: 16px;
+    line-height: 1.55;
+  }
+  .wrap { max-width: 1240px; margin: 0 auto; padding: 32px 28px 60px; }
+  header {
+    border-bottom: 2px solid var(--navy);
+    padding-bottom: 16px;
+    margin-bottom: 24px;
+  }
+  header h1 {
+    margin: 0; font-size: 30px; color: var(--navy); letter-spacing: 0.5px;
+  }
+  header .sub {
+    color: var(--bluegray); font-style: italic;
+    margin-top: 6px; font-size: 16px;
+  }
+  .toolbar {
+    display: flex; gap: 18px; align-items: center; flex-wrap: wrap;
+    background: white; border: 1px solid var(--rule);
+    padding: 14px 18px; margin-bottom: 18px;
+  }
+  .toolbar label { font-size: 15px; color: var(--bluegray); }
+  .toolbar input[type="number"], .toolbar input[type="date"] {
+    width: auto; padding: 6px 10px; border: 1px solid var(--rule);
+    font-family: Georgia, serif; font-size: 15px;
+  }
+  .toolbar input[type="number"] { width: 70px; }
+  button {
+    font-family: Georgia, serif; font-size: 16px; padding: 9px 22px;
+    border: 1px solid var(--navy); background: var(--navy); color: white;
+    cursor: pointer; letter-spacing: 0.3px;
+  }
+  button:hover:not(:disabled) { background: var(--bluegray); border-color: var(--bluegray); }
+  button:disabled { opacity: 0.4; cursor: not-allowed; }
+  button.primary {
+    background: var(--tan-deep); border-color: var(--tan-deep); color: white;
+  }
+  button.primary:hover:not(:disabled) {
+    background: #8a7252; border-color: #8a7252;
+  }
+  button.secondary { background: white; color: var(--navy); }
+  button.secondary:hover:not(:disabled) { background: var(--tan-light); }
+  .meta { font-size: 14px; color: var(--bluegray); margin-left: auto; }
+  .toolbar .status {
+    margin-left: auto; font-size: 14px; color: var(--bluegray);
+    font-family: 'SF Mono', monospace;
+  }
+  .toolbar .sep {
+    width: 1px; height: 22px; background: var(--rule);
+    margin: 0 4px;
+  }
+
+  /* --- Ticker grid --- */
+  .ticker-grid { margin-bottom: 18px; }
+  .ticker-group { margin-bottom: 12px; }
+  .ticker-group-head {
+    display: flex; align-items: baseline; gap: 10px;
+    margin-bottom: 6px; padding-bottom: 4px;
+  }
+  .ticker-group-head .name {
+    font-size: 15px; font-weight: bold; color: var(--navy);
+  }
+  .ticker-group-head .progress {
+    font-size: 13px; color: var(--bluegray);
+    font-family: 'SF Mono', monospace;
+  }
+  .ticker-chips {
+    display: grid; gap: 6px;
+    grid-template-columns: repeat(auto-fill, minmax(115px, 1fr));
+  }
+  .ticker-chip {
+    display: flex; align-items: center; gap: 8px;
+    padding: 7px 11px;
+    background: white; border: 1px solid var(--rule);
+    font-size: 14px; font-family: Georgia, serif;
+    user-select: none;
+  }
+  .ticker-chip .dot {
+    width: 9px; height: 9px; border-radius: 50%;
+    flex-shrink: 0;
+  }
+  .ticker-chip.loaded { border-color: var(--green); background: var(--green-light); }
+  .ticker-chip.loaded .dot { background: var(--green); }
+  .ticker-chip.missing .dot { background: var(--red); }
+  .ticker-chip .sym {
+    font-weight: bold; color: var(--navy); letter-spacing: 0.5px;
+  }
+  .ticker-chip .count {
+    margin-left: auto; font-size: 11px;
+    color: var(--bluegray); font-family: 'SF Mono', monospace;
+  }
+  .unmatched-note {
+    margin: 8px 0; padding: 8px 12px;
+    background: #fff0f0; border-left: 3px solid var(--red);
+    font-size: 13px; color: var(--red);
+  }
+
+  /* --- Drop overlay --- */
+  .drop-overlay {
+    position: fixed; inset: 0; z-index: 1000;
+    background: rgba(27, 42, 74, 0.85);
+    display: none; align-items: center; justify-content: center;
+    pointer-events: none;
+  }
+  .drop-overlay.active { display: flex; }
+  .drop-overlay .msg {
+    background: white; padding: 36px 60px;
+    border: 3px dashed var(--tan);
+    color: var(--navy); font-size: 24px; font-weight: bold;
+    letter-spacing: 0.5px;
+  }
+
+  /* --- Log (collapsed by default) --- */
+  details.log-wrap {
+    margin-bottom: 18px; font-size: 13px;
+  }
+  details.log-wrap summary {
+    cursor: pointer; color: var(--bluegray);
+    font-style: italic; padding: 2px 0;
+    user-select: none;
+  }
+  details.log-wrap summary:hover { color: var(--navy); }
+  .log {
+    background: white; border: 1px solid var(--rule);
+    padding: 10px 14px; font-family: 'SF Mono', Menlo, Consolas, monospace;
+    font-size: 12px; max-height: 180px; overflow-y: auto;
+    margin-top: 6px; white-space: pre-wrap;
+  }
+  .log .ok { color: var(--green); }
+  .log .warn { color: #c97f00; }
+  .log .err { color: var(--red); }
+
+  .tabs { display: flex; border-bottom: 1px solid var(--rule); }
+  .tab {
+    padding: 12px 20px; cursor: pointer;
+    border-bottom: 3px solid transparent;
+    color: var(--bluegray); font-size: 16px; user-select: none;
+  }
+  .tab.active {
+    border-bottom-color: var(--tan);
+    color: var(--navy); font-weight: bold;
+  }
+  .tab.signals.active { border-bottom-color: var(--tan-deep); }
+  .tab .count {
+    color: var(--bluegray); margin-left: 6px;
+    font-size: 14px; font-weight: normal;
+  }
+  .tab .signal-badge {
+    background: var(--tan); color: white;
+    padding: 2px 8px; margin-left: 6px;
+    font-size: 13px; font-weight: bold; border-radius: 8px;
+  }
+  .panel {
+    display: none; background: white;
+    border: 1px solid var(--rule); border-top: none;
+    padding: 20px;
+  }
+  .panel.active { display: block; }
+
+  /* --- Signals tab --- */
+  .signals-intro {
+    background: var(--tan-light); border-left: 4px solid var(--tan);
+    padding: 14px 18px; margin-bottom: 22px;
+    font-size: 14px; line-height: 1.6;
+  }
+  .signals-intro strong { color: var(--navy); }
+  .signals-grid { display: grid; gap: 22px; grid-template-columns: 1fr 1fr; }
+  @media (max-width: 800px) { .signals-grid { grid-template-columns: 1fr; } }
+  .signal-group h3 {
+    margin: 0 0 12px; font-size: 18px;
+    color: var(--navy); border-bottom: 1px solid var(--rule); padding-bottom: 8px;
+  }
+  .signal-group h3 .subhead {
+    font-size: 14px; color: var(--bluegray);
+    font-weight: normal; font-style: italic; margin-left: 8px;
+  }
+  .signal-row {
+    display: grid;
+    grid-template-columns: 70px 1fr auto;
+    gap: 12px;
+    padding: 12px 14px;
+    margin-bottom: 8px;
+    border-left: 4px solid var(--rule);
+    background: #fbfaf6;
+    font-size: 14px;
+    align-items: center;
+    cursor: pointer;
+    transition: background 0.1s;
+  }
+  .signal-row:hover { background: var(--tan-light); }
+  .signal-row .sym { font-weight: bold; color: var(--navy); font-size: 18px; }
+  .signal-row .desc { color: var(--ink); line-height: 1.5; }
+  .signal-row .desc small {
+    color: var(--bluegray); font-size: 13px;
+    font-family: 'SF Mono', monospace;
+  }
+  .signal-row .ratio {
+    font-family: 'SF Mono', monospace;
+    font-weight: bold; font-size: 16px;
+    text-align: right;
+  }
+  .signal-row.up .ratio { color: var(--green); }
+  .signal-row.down .ratio { color: var(--red); }
+  .signal-row.at-target { border-left-width: 4px; background: var(--tan-light); }
+  .signal-row.up.at-target { border-left-color: var(--green); }
+  .signal-row.down.at-target { border-left-color: var(--red); }
+  .signal-row.extended {
+    border-left-width: 6px;
+  }
+  .signal-row.up.extended { border-left-color: var(--green); background: var(--green-light); }
+  .signal-row.down.extended { border-left-color: var(--red); background: var(--red-light); }
+  .signal-row.developing { border-left-color: var(--tan); }
+  .signal-row.early { opacity: 0.7; }
+
+  /* Mini gauge bar */
+  .gauge {
+    grid-column: 1 / -1;
+    height: 6px;
+    background: var(--rule);
+    position: relative;
+    margin-top: 4px;
+    border-radius: 3px;
+    overflow: hidden;
+  }
+  .gauge .fill {
+    height: 100%;
+    transition: width 0.3s;
+  }
+  .gauge .fill.up { background: var(--green); }
+  .gauge .fill.down { background: var(--red); }
+  .gauge .marker {
+    position: absolute; top: -2px; bottom: -2px;
+    width: 2px; background: var(--navy); opacity: 0.5;
+  }
+  .signals-empty {
+    padding: 28px; text-align: center;
+    color: var(--bluegray); font-style: italic;
+    font-size: 15px;
+  }
+
+  /* --- Ticker section --- */
+  .ticker-section {
+    margin-bottom: 30px; padding-bottom: 24px;
+    border-bottom: 1px dashed var(--rule);
+  }
+  .ticker-section:last-child {
+    border-bottom: none; margin-bottom: 0; padding-bottom: 0;
+  }
+  .ticker-section.signal-up { background: linear-gradient(to right, var(--tan-light) 0%, transparent 60%); padding-left: 12px; border-left: 4px solid var(--green); }
+  .ticker-section.signal-down { background: linear-gradient(to right, var(--tan-light) 0%, transparent 60%); padding-left: 12px; border-left: 4px solid var(--red); }
+  .ticker-head {
+    display: flex; align-items: baseline; gap: 16px;
+    margin-bottom: 8px; flex-wrap: wrap;
+  }
+  .ticker-head .sym {
+    font-size: 22px; font-weight: bold; color: var(--navy); letter-spacing: 1px;
+  }
+  .ticker-head .box { color: var(--tan-deep); font-size: 14px; }
+  .ticker-head .summary {
+    margin-left: auto; font-size: 13px;
+    color: var(--bluegray); font-family: 'SF Mono', monospace;
+  }
+
+  .status-banner {
+    display: grid;
+    grid-template-columns: auto auto auto auto 1fr;
+    gap: 22px;
+    padding: 12px 16px; margin-bottom: 12px;
+    background: var(--tan-light);
+    border: 1px solid var(--rule); border-left: 4px solid var(--bluegray);
+    font-size: 14px;
+  }
+  .status-banner.up { border-left-color: var(--green); }
+  .status-banner.down { border-left-color: var(--red); }
+  .status-banner.extended-up {
+    border-left-color: var(--green); background: var(--green-light);
+    border-left-width: 6px;
+  }
+  .status-banner.extended-down {
+    border-left-color: var(--red); background: var(--red-light);
+    border-left-width: 6px;
+  }
+  .status-banner .field {
+    display: flex; flex-direction: column; gap: 3px;
+  }
+  .status-banner .field .label {
+    color: var(--bluegray); font-size: 12px;
+    text-transform: uppercase; letter-spacing: 0.6px;
+  }
+  .status-banner .field .value {
+    font-family: 'SF Mono', monospace; font-weight: bold; color: var(--ink);
+    font-size: 15px;
+  }
+  .status-banner .field .value.pos { color: var(--green); }
+  .status-banner .field .value.neg { color: var(--red); }
+  .status-banner .verdict {
+    align-self: center; justify-self: end;
+    text-align: right; font-style: italic;
+    color: var(--bluegray); font-size: 14px;
+  }
+  .status-banner.extended-up .verdict { color: var(--green); font-weight: bold; font-style: normal; font-size: 15px; }
+  .status-banner.extended-down .verdict { color: var(--red); font-weight: bold; font-style: normal; font-size: 15px; }
+
+  .chart-wrap {
+    background: var(--paper); border: 1px solid var(--rule);
+    padding: 8px 4px 4px; margin-bottom: 12px;
+  }
+  svg.chart { display: block; width: 100%; height: 320px; }
+  .chart-axis { fill: var(--bluegray); font-family: Georgia, serif; font-size: 12px; }
+  .chart-grid { stroke: var(--rule); stroke-width: 0.5; stroke-dasharray: 2,2; }
+  .chart-priceline { fill: none; stroke: var(--priceline); stroke-width: 1.2; }
+  .chart-zigzag { fill: none; stroke: var(--bluegray); stroke-width: 1.2; stroke-dasharray: 4,3; opacity: 0.6; }
+  .chart-pivot-high { fill: var(--green); stroke: white; stroke-width: 1; }
+  .chart-pivot-low  { fill: var(--red);   stroke: white; stroke-width: 1; }
+  .chart-pivot-bo   { fill: var(--bluegray); stroke: white; stroke-width: 1; }
+  .chart-target-up   { stroke: var(--green); stroke-width: 1.5; stroke-dasharray: 6,3; fill: none; }
+  .chart-target-down { stroke: var(--red);   stroke-width: 1.5; stroke-dasharray: 6,3; fill: none; }
+  .chart-target-label { font-family: Georgia, serif; font-size: 12px; font-style: italic; }
+
+  details.pivot-table summary {
+    cursor: pointer; color: var(--navy); font-size: 14px;
+    padding: 6px 0; user-select: none;
+  }
+  details.pivot-table summary:hover { color: var(--bluegray); }
+  table.pivots {
+    width: 100%; border-collapse: collapse;
+    font-family: 'SF Mono', Menlo, Consolas, monospace;
+    font-size: 13px; margin-top: 8px;
+  }
+  table.pivots th {
+    text-align: left; color: var(--bluegray); font-weight: normal;
+    padding: 7px 10px; border-bottom: 1px solid var(--rule);
+    font-family: Georgia, serif; font-style: italic; font-size: 14px;
+  }
+  table.pivots td { padding: 5px 10px; border-bottom: 1px solid #f0ebde; }
+  table.pivots td.label.High { color: var(--green); font-weight: bold; }
+  table.pivots td.label.Low { color: var(--red); font-weight: bold; }
+  table.pivots td.label.Breakout { color: var(--bluegray); font-style: italic; }
+  table.pivots td.pct.pos { color: var(--green); }
+  table.pivots td.pct.neg { color: var(--red); }
+  table.pivots td.num { text-align: right; }
+  .empty {
+    color: var(--bluegray); font-style: italic;
+    padding: 22px; text-align: center; font-size: 15px;
+  }
+  details.config {
+    margin-top: 24px; background: var(--tan-light);
+    padding: 14px 18px; border: 1px solid var(--rule); font-size: 14px;
+  }
+  details.config summary { cursor: pointer; color: var(--navy); font-weight: bold; font-size: 15px; }
+  details.config pre {
+    margin: 12px 0 0; font-family: 'SF Mono', monospace;
+    font-size: 12px; overflow-x: auto;
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <h1>Point and Figure Pivot Detector</h1>
+  <div class="sub">Daily prices from Tiingo. Run-ends captured, averaged, surfaced as inflection signals.</div>
+</header>
+
+<div class="toolbar">
+  <button id="tiingoBtn" class="primary">Pull from Tiingo</button>
+  <button id="browseBtn" class="secondary">Or load CSVs</button>
+  <input type="file" id="fileInput" accept=".csv" multiple style="display:none">
+  <div class="sep"></div>
+  <label>Start <input type="date" id="startDate" value="2012-01-01"></label>
+  <label>Reversal <input type="number" id="reversalBoxes" value="5" min="2" max="10" step="1"></label>
+  <button id="run" disabled>Detect pivots</button>
+  <button id="download" class="secondary" disabled>Download Excel</button>
+  <button id="clear" class="secondary">Clear</button>
+  <span class="status" id="status">No data loaded yet</span>
+</div>
+
+<div class="toolbar" id="tiingoBar" style="display:none">
+  <label style="flex:1">Access password
+    <input type="password" id="accessPw" placeholder="Enter the shared password" style="width: 100%; max-width: 320px; margin-left: 6px;">
+  </label>
+  <label style="display:flex; align-items:center; gap:6px;">
+    <input type="checkbox" id="rememberToken" checked> Remember
+  </label>
+  <button id="tiingoStart" class="primary">Start pull</button>
+  <button id="tiingoCancel" class="secondary">Cancel</button>
+  <span class="status" id="tiingoStatus"></span>
+</div>
+
+<div class="ticker-grid" id="tickerGrid"></div>
+
+<details class="log-wrap">
+  <summary>Show log</summary>
+  <div class="log" id="log"></div>
+</details>
+
+<div class="drop-overlay" id="dropOverlay">
+  <div class="msg">Drop CSVs to load</div>
+</div>
+
+<div class="tabs" id="tabs"></div>
+<div id="panels"></div>
+
+<details class="config">
+  <summary>Edit ticker configuration</summary>
+  <p>To change tickers or box sizes, open this file in a text editor and edit the <code>SHEETS</code> object near the top of the script. Each row is <code>[ticker, headerLabel, boxPercent]</code>.</p>
+  <pre id="configdump"></pre>
+</details>
+
+</div>
+
+<script>
+// ============================================================
+// CONFIGURATION
+// ============================================================
+const SHEETS = {
+  'FANG Trading': [
+    ['MSFT', 'Microsoft Rise and Fall', 0.03],
+    ['GOOG', 'Google Rise and Fall',    0.03],
+    ['AAPL', 'Apple Rise and Fall',     0.04],
+    ['ADBE', 'Adobe Rise and Fall',     0.04],
+    ['AMZN', 'Amazon Rise and Fall',    0.04],
+    ['META', 'Facebook Rise and Fall',  0.04],
+    ['NVDA', 'NVidia Rise and Fall',    0.04],
+    ['TSLA', 'Tesla Rise and Fall',     0.08],
+    ['NFLX', 'Netflix Rise and Fall',   0.06],
+    ['AVGO', 'Broadcomm AVGO',          0.05],
+    ['QQQ',  'QQQ',                     0.03],
+    ['MU',   'Micron - MU',             0.06],
+  ],
+  'BTR Trackers': [
+    ['BRZU', '3X Brazil BRZU',          0.12],
+    ['GUSH', '2X Oil & Gas GUSH',       0.10],
+    ['UCO',  '2X Crude Oil UCO',        0.08],
+    ['MIDU', '3X Mid Cap MIDU',         0.08],
+    ['NVDL', '2X NVDA Long NVDL',       0.10],
+    ['TSLL', '1.5X TSLA Long TSLL',     0.10],
+    ['BIB',  '2X Biotech BIB',          0.06],
+    ['YINN', '3X China Bull YINN',      0.10],
+    ['INDL', '2X India Bull INDL',      0.08],
+    ['BOIL', '2X Nat Gas BOIL',         0.15],
+    ['UGL',  '2X Gold UGL',             0.05],
+    ['TQQQ', '3X QQQ Long TQQQ',        0.08],
+    ['LABU', '3X Biotech Bull LABU',    0.12],
+  ],
+};
+
+// ============================================================
+// PIVOT DETECTION
+// ============================================================
+function detectPivots(highs, lows, dates, boxPct, reversalBoxes) {
+  if (!highs.length) return [];
+  const td = Math.pow(1 - boxPct, reversalBoxes);
+  const tu = Math.pow(1 + boxPct, reversalBoxes);
+  const pivots = [{ label: 'Breakout', date: dates[0], price: lows[0], pct: null }];
+  let dir = 'up';
+  let rH = highs[0], rHd = dates[0], rL = lows[0], rLd = dates[0], lp = lows[0];
+  for (let i = 1; i < dates.length; i++) {
+    const h = highs[i], l = lows[i], d = dates[i];
+    if (dir === 'up') {
+      if (h > rH) { rH = h; rHd = d; }
+      if (l <= rH * td) {
+        pivots.push({ label: 'High', date: rHd, price: rH, pct: (rH - lp) / lp });
+        lp = rH; dir = 'down'; rL = l; rLd = d;
+      }
+    } else {
+      if (l < rL) { rL = l; rLd = d; }
+      if (h >= rL * tu) {
+        pivots.push({ label: 'Low', date: rLd, price: rL, pct: (rL - lp) / lp });
+        lp = rL; dir = 'up'; rH = h; rHd = d;
+      }
+    }
+  }
+  return pivots;
+}
+
+// ============================================================
+// ANALYTICS — Avg gain/loss + current state + signal
+// ============================================================
+function computeAnalytics(pivots, currentRow) {
+  if (!pivots || pivots.length < 2) return null;
+
+  const gains = pivots.filter(p => p.label === 'High' && p.pct != null).map(p => p.pct);
+  const losses = pivots.filter(p => p.label === 'Low' && p.pct != null).map(p => p.pct);
+  const avgGain = gains.length ? gains.reduce((a,b)=>a+b,0)/gains.length : null;
+  const avgLoss = losses.length ? losses.reduce((a,b)=>a+b,0)/losses.length : null;
+  const maxGain = gains.length ? Math.max(...gains) : null;
+  const minLoss = losses.length ? Math.min(...losses) : null;
+
+  const last = pivots[pivots.length - 1];
+  const currentPrice = currentRow ? currentRow.close : last.price;
+  const currentDate = currentRow ? currentRow.date : last.date;
+  const moveFromLast = (currentPrice - last.price) / last.price;
+
+  let direction = null, target = null, ratio = null, signal = 'none';
+  if (last.label === 'Low' && avgGain != null) {
+    direction = 'up';
+    target = last.price * (1 + avgGain);
+    ratio = moveFromLast / avgGain; // positive when in run
+  } else if (last.label === 'High' && avgLoss != null) {
+    direction = 'down';
+    target = last.price * (1 + avgLoss);
+    ratio = moveFromLast / avgLoss; // moveFromLast and avgLoss both negative -> positive ratio
+  }
+
+  if (ratio != null) {
+    if (ratio >= 1.3) signal = 'extended';
+    else if (ratio >= 1.0) signal = 'at-target';
+    else if (ratio >= 0.7) signal = 'developing';
+    else signal = 'early';
+  }
+
+  return {
+    avgGain, avgLoss, maxGain, minLoss,
+    gainCount: gains.length, lossCount: losses.length,
+    last, currentPrice, currentDate, moveFromLast,
+    direction, target, ratio, signal,
+  };
+}
+
+// ============================================================
+// CSV PARSING (StockCharts format)
+// ============================================================
+function parseStockChartsCSV(text) {
+  const lines = text.split(/\r?\n/);
+  if (lines.length < 3) throw new Error('CSV too short');
+  const firstParts = lines[0].split(',').map(s => s.trim());
+  const tickerFromCSV = firstParts[0].toUpperCase();
+  const rows = [];
+  for (let i = 2; i < lines.length; i++) {
+    const line = lines[i];
+    if (!line.trim()) continue;
+    const parts = line.split(',').map(s => s.trim());
+    if (parts.length < 5) continue;
+    const m = parts[0].match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+    if (!m) continue;
+    const date = new Date(Date.UTC(+m[3], +m[1] - 1, +m[2]));
+    const high = parseFloat(parts[2]);
+    const low = parseFloat(parts[3]);
+    const close = parseFloat(parts[4]);
+    if (!isFinite(high) || !isFinite(low) || !isFinite(close)) continue;
+    rows.push({ date, high, low, close });
+  }
+  rows.sort((a, b) => a.date - b.date);
+  return { ticker: tickerFromCSV, rows };
+}
+
+function findTickerInConfig(symbol) {
+  for (const [sheetName, tickers] of Object.entries(SHEETS)) {
+    for (const [t, header, box] of tickers) {
+      if (t === symbol) return { sheetName, ticker: t, header, box };
+    }
+  }
+  return null;
+}
+function detectTickerFromFilename(filename) {
+  const base = filename.replace(/\.csv$/i, '');
+  return base.split(/[_\-\s.]/)[0].toUpperCase();
+}
+
+// ============================================================
+// SVG CHART
+// ============================================================
+function renderChart(rows, pivots, analytics, width = 1100, height = 280) {
+  if (!rows.length) return '';
+  const padL = 50, padR = 14, padT = 12, padB = 24;
+  const w = width, h = height;
+  const innerW = w - padL - padR;
+  const innerH = h - padT - padB;
+
+  const tMin = rows[0].date.getTime();
+  const tMax = rows[rows.length - 1].date.getTime();
+  const tSpan = tMax - tMin || 1;
+  const closes = rows.map(r => r.close).filter(c => c > 0);
+  let pMin = Math.min(...closes), pMax = Math.max(...closes);
+  // Expand range if target line is outside data range
+  if (analytics?.target) {
+    pMin = Math.min(pMin, analytics.target * 0.95);
+    pMax = Math.max(pMax, analytics.target * 1.05);
+  }
+  const lpMin = Math.log(pMin), lpMax = Math.log(pMax);
+  const lpSpan = lpMax - lpMin || 1;
+
+  const x = t => padL + ((t - tMin) / tSpan) * innerW;
+  const y = p => padT + (1 - (Math.log(p) - lpMin) / lpSpan) * innerH;
+
+  const sampled = [];
+  const step = Math.max(1, Math.floor(rows.length / 800));
+  for (let i = 0; i < rows.length; i += step) sampled.push(rows[i]);
+  if (sampled[sampled.length - 1] !== rows[rows.length - 1]) sampled.push(rows[rows.length - 1]);
+  const linePath = sampled.map((r, i) => `${i === 0 ? 'M' : 'L'}${x(r.date.getTime()).toFixed(1)},${y(r.close).toFixed(1)}`).join('');
+  const zigPath = pivots.map((p, i) => `${i === 0 ? 'M' : 'L'}${x(p.date.getTime()).toFixed(1)},${y(p.price).toFixed(1)}`).join('');
+
+  // Y ticks
+  const yTicks = [];
+  const niceSteps = [1, 2, 5];
+  let mag = Math.pow(10, Math.floor(Math.log10(pMin)));
+  while (mag < pMax * 5) {
+    for (const s of niceSteps) {
+      const v = s * mag;
+      if (v >= pMin * 0.9 && v <= pMax * 1.1) yTicks.push(v);
+    }
+    mag *= 10;
+  }
+  // X ticks
+  const xTicks = [];
+  const startYear = new Date(tMin).getUTCFullYear();
+  const endYear = new Date(tMax).getUTCFullYear();
+  const yearStep = (endYear - startYear) > 12 ? 2 : 1;
+  for (let yr = Math.ceil(startYear / yearStep) * yearStep; yr <= endYear; yr += yearStep) {
+    xTicks.push({ year: yr, t: Date.UTC(yr, 0, 1) });
+  }
+
+  let pivotMarkers = '';
+  for (const p of pivots) {
+    const cx = x(p.date.getTime()).toFixed(1);
+    const cy = y(p.price).toFixed(1);
+    const cls = p.label === 'High' ? 'chart-pivot-high'
+              : p.label === 'Low'  ? 'chart-pivot-low'
+              :                       'chart-pivot-bo';
+    const r = p.label === 'Breakout' ? 3 : 4;
+    const tip = `${p.label} ${p.date.toISOString().slice(0,10)} $${p.price.toFixed(2)}${p.pct == null ? '' : ` (${(p.pct*100).toFixed(1)}%)`}`;
+    pivotMarkers += `<circle cx="${cx}" cy="${cy}" r="${r}" class="${cls}"><title>${tip}</title></circle>`;
+  }
+
+  // Target line from last pivot date to right edge
+  let targetMarkup = '';
+  if (analytics?.target && analytics.last) {
+    const x1 = x(analytics.last.date.getTime()).toFixed(1);
+    const x2 = (w - padR).toFixed(1);
+    const yT = y(analytics.target).toFixed(1);
+    const cls = analytics.direction === 'up' ? 'chart-target-up' : 'chart-target-down';
+    const labelCls = analytics.direction === 'up' ? 'chart-target-up' : 'chart-target-down';
+    const labelText = `Avg target $${analytics.target.toFixed(2)}`;
+    targetMarkup = `
+      <line class="${cls}" x1="${x1}" x2="${x2}" y1="${yT}" y2="${yT}"/>
+      <text class="chart-target-label" fill="${analytics.direction === 'up' ? '#2d6a4f' : '#b03a2e'}" x="${x2}" y="${(parseFloat(yT) - 4).toFixed(1)}" text-anchor="end">${labelText}</text>
+    `;
+    // Current price marker
+    const lastRow = rows[rows.length - 1];
+    const cx = x(lastRow.date.getTime()).toFixed(1);
+    const cy = y(lastRow.close).toFixed(1);
+    targetMarkup += `<circle cx="${cx}" cy="${cy}" r="3.5" fill="${analytics.direction === 'up' ? '#2d6a4f' : '#b03a2e'}" stroke="white" stroke-width="1.5"><title>Current $${lastRow.close.toFixed(2)} on ${lastRow.date.toISOString().slice(0,10)}</title></circle>`;
+  }
+
+  const yGridLines = yTicks.map(v => {
+    const yy = y(v).toFixed(1);
+    return `<line class="chart-grid" x1="${padL}" x2="${w - padR}" y1="${yy}" y2="${yy}"/>` +
+           `<text class="chart-axis" x="${padL - 6}" y="${yy + 3}" text-anchor="end">$${v >= 100 ? v.toFixed(0) : v.toFixed(2)}</text>`;
+  }).join('');
+  const xGridLines = xTicks.map(({year, t}) => {
+    const xx = x(t).toFixed(1);
+    return `<line class="chart-grid" x1="${xx}" x2="${xx}" y1="${padT}" y2="${h - padB}"/>` +
+           `<text class="chart-axis" x="${xx}" y="${h - padB + 14}" text-anchor="middle">${year}</text>`;
+  }).join('');
+
+  return `
+    <svg class="chart" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none">
+      ${yGridLines}${xGridLines}
+      <path class="chart-priceline" d="${linePath}"/>
+      <path class="chart-zigzag" d="${zigPath}"/>
+      ${targetMarkup}
+      ${pivotMarkers}
+    </svg>
+  `;
+}
+
+// ============================================================
+// FORMATTING
+// ============================================================
+function fmtDate(d) { return d.toISOString().slice(0, 10); }
+function fmtPrice(p) { return '$' + p.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+function fmtPct(p) {
+  if (p == null) return '';
+  return (p >= 0 ? '+' : '') + (p * 100).toFixed(1) + '%';
+}
+function verdictText(a) {
+  if (!a || !a.direction) return '';
+  if (a.direction === 'up') {
+    if (a.signal === 'extended') return 'Past avg gain — watch for reversal';
+    if (a.signal === 'at-target') return 'At avg gain — inflection zone';
+    if (a.signal === 'developing') return 'Building toward avg gain';
+    return 'Early in up-run';
+  } else {
+    if (a.signal === 'extended') return 'Past avg loss — watch for reversal';
+    if (a.signal === 'at-target') return 'At avg loss — inflection zone';
+    if (a.signal === 'developing') return 'Building toward avg loss';
+    return 'Early in down-run';
+  }
+}
+
+// ============================================================
+// UI
+// ============================================================
+const uploadedFiles = {};
+const allResults = {};
+const browseBtn = document.getElementById('browseBtn');
+const tiingoBtn = document.getElementById('tiingoBtn');
+const tiingoBar = document.getElementById('tiingoBar');
+const tiingoTokenEl = document.getElementById('accessPw');
+const rememberTokenEl = document.getElementById('rememberToken');
+const tiingoStartBtn = document.getElementById('tiingoStart');
+const tiingoCancelBtn = document.getElementById('tiingoCancel');
+const tiingoStatusEl = document.getElementById('tiingoStatus');
+const fileInput = document.getElementById('fileInput');
+const tickerGridEl = document.getElementById('tickerGrid');
+const dropOverlay = document.getElementById('dropOverlay');
+const statusEl = document.getElementById('status');
+const logEl = document.getElementById('log');
+const tabsEl = document.getElementById('tabs');
+const panelsEl = document.getElementById('panels');
+const runBtn = document.getElementById('run');
+const dlBtn = document.getElementById('download');
+const clearBtn = document.getElementById('clear');
+const metaEl = document.getElementById('status');
+const startDateEl = document.getElementById('startDate');
+const reversalBoxesEl = document.getElementById('reversalBoxes');
+
+// Restore saved access password if present
+try {
+  const saved = localStorage.getItem('pf_access_pw');
+  if (saved) tiingoTokenEl.value = saved;
+} catch (e) {}
+
+// ============================================================
+// TIINGO FETCHING via serverless proxy
+// ============================================================
+let tiingoAbort = false;
+
+async function fetchTiingoTicker(ticker, accessPw, startDate) {
+  const url = `/api/tiingo?ticker=${encodeURIComponent(ticker)}&startDate=${encodeURIComponent(startDate)}`;
+  const resp = await fetch(url, {
+    headers: { 'x-access-pw': accessPw },
+  });
+  if (!resp.ok) {
+    let detail = '';
+    try {
+      const body = await resp.json();
+      detail = body.error || body.detail || JSON.stringify(body);
+    } catch (e) {
+      detail = await resp.text().catch(() => '');
+    }
+    throw new Error(`${resp.status}${detail ? ': ' + detail.slice(0, 160) : ''}`);
+  }
+  const data = await resp.json();
+  if (!data.rows || !Array.isArray(data.rows)) throw new Error('Unexpected response shape');
+  const rows = data.rows.map(d => ({
+    date: new Date(d.date),
+    high: d.high,
+    low:  d.low,
+    close: d.close,
+  })).filter(r => isFinite(r.high) && isFinite(r.low) && isFinite(r.close));
+  rows.sort((a, b) => a.date - b.date);
+  return rows;
+}
+
+async function pullAllFromTiingo() {
+  const accessPw = tiingoTokenEl.value.trim();
+  if (!accessPw) {
+    tiingoStatusEl.textContent = 'Access password required.';
+    tiingoStatusEl.style.color = 'var(--red)';
+    return;
+  }
+  tiingoStatusEl.style.color = '';
+  if (rememberTokenEl.checked) {
+    try { localStorage.setItem('pf_access_pw', accessPw); } catch (e) {}
+  } else {
+    try { localStorage.removeItem('pf_access_pw'); } catch (e) {}
+  }
+
+  const allTickers = [];
+  for (const tickers of Object.values(SHEETS)) {
+    for (const [t] of tickers) {
+      if (!allTickers.includes(t)) allTickers.push(t);
+    }
+  }
+
+  tiingoAbort = false;
+  tiingoStartBtn.disabled = true;
+  const startDate = startDateEl.value;
+  let done = 0, failed = [];
+  logEl.textContent = '';
+  log(`Pulling ${allTickers.length} tickers from Tiingo starting ${startDate}...`);
+
+  for (const ticker of allTickers) {
+    if (tiingoAbort) { log('Cancelled by user.', 'warn'); break; }
+    tiingoStatusEl.textContent = `Fetching ${ticker} (${done + 1} of ${allTickers.length})...`;
+    try {
+      const rows = await fetchTiingoTicker(ticker, accessPw, startDate);
+      uploadedFiles[ticker] = { filename: `Tiingo: ${ticker}`, rows, matched: true };
+      log(`  ${ticker}: ${rows.length} rows`, 'ok');
+    } catch (e) {
+      log(`  ${ticker}: ${e.message}`, 'err');
+      failed.push(ticker);
+    }
+    done++;
+    renderTickerGrid();
+    await new Promise(r => setTimeout(r, 150));
+  }
+
+  tiingoStartBtn.disabled = false;
+  tiingoStatusEl.textContent = tiingoAbort
+    ? `Cancelled at ${done} of ${allTickers.length}`
+    : `Done. ${done - failed.length} of ${allTickers.length} loaded.`
+      + (failed.length ? ` Failed: ${failed.join(', ')}` : '');
+}
+
+tiingoBtn.addEventListener('click', () => {
+  tiingoBar.style.display = (tiingoBar.style.display === 'none') ? 'flex' : 'none';
+  if (tiingoBar.style.display === 'flex' && !tiingoTokenEl.value) tiingoTokenEl.focus();
+});
+tiingoStartBtn.addEventListener('click', pullAllFromTiingo);
+tiingoCancelBtn.addEventListener('click', () => {
+  tiingoAbort = true;
+  tiingoBar.style.display = 'none';
+});
+
+function log(msg, cls) {
+  const span = document.createElement('span');
+  if (cls) span.className = cls;
+  span.textContent = msg + '\n';
+  logEl.appendChild(span);
+  logEl.scrollTop = logEl.scrollHeight;
+}
+
+function renderTickerGrid() {
+  tickerGridEl.innerHTML = '';
+  let totalConfigured = 0, totalLoaded = 0;
+  const matchedTickers = new Set();
+
+  for (const [sheetName, tickers] of Object.entries(SHEETS)) {
+    if (!tickers.length) continue;
+    totalConfigured += tickers.length;
+    const loadedInSheet = tickers.filter(([t]) => uploadedFiles[t]).length;
+    totalLoaded += loadedInSheet;
+
+    const group = document.createElement('div');
+    group.className = 'ticker-group';
+    let chipsHtml = '';
+    for (const [ticker, header, box] of tickers) {
+      const f = uploadedFiles[ticker];
+      if (f) matchedTickers.add(ticker);
+      const cls = f ? 'loaded' : 'missing';
+      const count = f ? `<span class="count">${f.rows.length.toLocaleString()}</span>` : '';
+      chipsHtml += `
+        <div class="ticker-chip ${cls}" title="${f ? f.filename : 'No CSV uploaded'}">
+          <span class="dot"></span>
+          <span class="sym">${ticker}</span>
+          ${count}
+        </div>
+      `;
+    }
+    group.innerHTML = `
+      <div class="ticker-group-head">
+        <span class="name">${sheetName}</span>
+        <span class="progress">${loadedInSheet} of ${tickers.length} loaded</span>
+      </div>
+      <div class="ticker-chips">${chipsHtml}</div>
+    `;
+    tickerGridEl.appendChild(group);
+  }
+
+  // Surface any uploaded files that don't match any configured ticker
+  const unmatched = Object.entries(uploadedFiles).filter(([t]) => !matchedTickers.has(t));
+  if (unmatched.length) {
+    const note = document.createElement('div');
+    note.className = 'unmatched-note';
+    note.textContent = `Unmatched files (not in current config, will be ignored): ${unmatched.map(([t, f]) => `${t} from ${f.filename}`).join(', ')}`;
+    tickerGridEl.appendChild(note);
+  }
+
+  statusEl.textContent = `${totalLoaded} of ${totalConfigured} CSVs loaded`;
+  runBtn.disabled = totalLoaded === 0;
+}
+
+async function handleFiles(fileList) {
+  for (const f of fileList) {
+    if (!f.name.toLowerCase().endsWith('.csv')) {
+      log(`Skipping ${f.name}: not a CSV`, 'warn');
+      continue;
+    }
+    try {
+      const text = await f.text();
+      const { ticker, rows } = parseStockChartsCSV(text);
+      const filenameTicker = detectTickerFromFilename(f.name);
+      const finalTicker = findTickerInConfig(ticker) ? ticker
+                        : findTickerInConfig(filenameTicker) ? filenameTicker
+                        : ticker;
+      const matched = !!findTickerInConfig(finalTicker);
+      uploadedFiles[finalTicker] = { filename: f.name, rows, matched };
+      log(`Loaded ${f.name} → ${finalTicker} (${rows.length} rows, ${rows[0].date.toISOString().slice(0,10)} to ${rows[rows.length-1].date.toISOString().slice(0,10)})`, matched ? 'ok' : 'warn');
+      if (!matched) log(`  Note: ${finalTicker} not in current config — will be ignored.`, 'warn');
+    } catch (e) {
+      log(`Failed to parse ${f.name}: ${e.message}`, 'err');
+    }
+  }
+  renderTickerGrid();
+}
+
+browseBtn.addEventListener('click', () => fileInput.click());
+fileInput.addEventListener('change', e => {
+  handleFiles(e.target.files);
+  fileInput.value = ''; // reset so the same file can be re-uploaded
+});
+
+// Window-wide drag and drop
+let dragCounter = 0;
+window.addEventListener('dragenter', e => {
+  if (e.dataTransfer && [...e.dataTransfer.types].includes('Files')) {
+    dragCounter++;
+    dropOverlay.classList.add('active');
+  }
+});
+window.addEventListener('dragleave', e => {
+  dragCounter--;
+  if (dragCounter <= 0) {
+    dragCounter = 0;
+    dropOverlay.classList.remove('active');
+  }
+});
+window.addEventListener('dragover', e => { e.preventDefault(); });
+window.addEventListener('drop', e => {
+  e.preventDefault();
+  dragCounter = 0;
+  dropOverlay.classList.remove('active');
+  if (e.dataTransfer?.files) handleFiles(e.dataTransfer.files);
+});
+
+clearBtn.addEventListener('click', () => {
+  for (const k of Object.keys(uploadedFiles)) delete uploadedFiles[k];
+  for (const k of Object.keys(allResults)) delete allResults[k];
+  renderTickerGrid();
+  logEl.textContent = '';
+  renderTabs();
+  dlBtn.disabled = true;
+});
+
+function renderConfigDump() {
+  document.getElementById('configdump').textContent = JSON.stringify(SHEETS, null, 2);
+}
+
+function safeId(s) { return s.replace(/\s+/g,'_').replace(/[^A-Za-z0-9_-]/g,''); }
+
+function activateTab(name) {
+  [...tabsEl.children].forEach(t => t.classList.remove('active'));
+  [...panelsEl.children].forEach(p => p.classList.remove('active'));
+  const tab = tabsEl.querySelector(`[data-name="${name}"]`);
+  if (tab) tab.classList.add('active');
+  const panel = document.getElementById(`panel-${safeId(name)}`);
+  if (panel) panel.classList.add('active');
+  // Scroll to a specific ticker section if requested
+  if (window._scrollTo) {
+    const el = document.getElementById(window._scrollTo);
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    window._scrollTo = null;
+  }
+}
+
+function renderTabs() {
+  tabsEl.innerHTML = '';
+  panelsEl.innerHTML = '';
+
+  // Signals tab first
+  const stab = document.createElement('div');
+  stab.className = 'tab signals active';
+  stab.dataset.name = '__signals__';
+  stab.innerHTML = `Signals <span class="signal-badge" id="signal-count">0</span>`;
+  stab.addEventListener('click', () => activateTab('__signals__'));
+  tabsEl.appendChild(stab);
+  const spanel = document.createElement('div');
+  spanel.id = `panel-${safeId('__signals__')}`;
+  spanel.className = 'panel active';
+  spanel.innerHTML = `<div class="signals-empty">Run the detector to see signals here.</div>`;
+  panelsEl.appendChild(spanel);
+
+  // Sheet tabs
+  Object.keys(SHEETS).forEach((name) => {
+    const tab = document.createElement('div');
+    tab.className = 'tab';
+    tab.dataset.name = name;
+    tab.innerHTML = `${name} <span class="count" id="count-${safeId(name)}"></span>`;
+    tab.addEventListener('click', () => activateTab(name));
+    tabsEl.appendChild(tab);
+
+    const panel = document.createElement('div');
+    panel.id = `panel-${safeId(name)}`;
+    panel.className = 'panel';
+    if (SHEETS[name].length === 0) {
+      panel.innerHTML = '<div class="empty">No tickers configured.</div>';
+    } else {
+      SHEETS[name].forEach(([ticker, header, box]) => {
+        const sec = document.createElement('div');
+        sec.className = 'ticker-section';
+        sec.id = `sec-${safeId(name)}-${ticker}`;
+        sec.innerHTML = `
+          <div class="ticker-head">
+            <span class="sym">${ticker}</span>
+            <span class="box">${(box * 100).toFixed(0)}% box · ${header}</span>
+            <span class="summary" id="sum-${safeId(name)}-${ticker}"></span>
+          </div>
+          <div id="body-${safeId(name)}-${ticker}"><span class="empty">Awaiting data...</span></div>
+        `;
+        panel.appendChild(sec);
+      });
+    }
+    panelsEl.appendChild(panel);
+  });
+}
+
+function renderTickerResult(sheetName, ticker, rows, pivots, analytics) {
+  const sId = safeId(sheetName);
+  const body = document.getElementById(`body-${sId}-${ticker}`);
+  const sum = document.getElementById(`sum-${sId}-${ticker}`);
+  const sec = document.getElementById(`sec-${sId}-${ticker}`);
+  if (!body) return;
+
+  // Reset signal class on section
+  sec.classList.remove('signal-up', 'signal-down');
+
+  if (!pivots || pivots.length === 0) {
+    body.innerHTML = '<span class="empty">No pivots detected.</span>';
+    if (sum) sum.textContent = '';
+    return;
+  }
+
+  // Section signal class
+  if (analytics && (analytics.signal === 'at-target' || analytics.signal === 'extended')) {
+    sec.classList.add(analytics.direction === 'up' ? 'signal-up' : 'signal-down');
+  }
+
+  if (sum) {
+    sum.textContent = `${pivots.length} pivots · avg gain ${fmtPct(analytics?.avgGain)} · avg loss ${fmtPct(analytics?.avgLoss)} · last: ${analytics.last.label} ${fmtDate(analytics.last.date)}`;
+  }
+
+  // Build status banner
+  let bannerHtml = '';
+  if (analytics && analytics.direction) {
+    const cls = analytics.signal === 'extended' ? `extended-${analytics.direction}`
+              : analytics.signal === 'at-target' ? `extended-${analytics.direction}`
+              : analytics.direction;
+    const moveCls = analytics.moveFromLast >= 0 ? 'pos' : 'neg';
+    const avgRefVal = analytics.direction === 'up' ? analytics.avgGain : analytics.avgLoss;
+    const avgRefCls = avgRefVal >= 0 ? 'pos' : 'neg';
+    bannerHtml = `
+      <div class="status-banner ${cls}">
+        <div class="field">
+          <span class="label">State</span>
+          <span class="value">${analytics.direction === 'up' ? 'Up-run from low' : 'Down-run from high'}</span>
+        </div>
+        <div class="field">
+          <span class="label">Move from $${analytics.last.price.toFixed(2)}</span>
+          <span class="value ${moveCls}">${fmtPct(analytics.moveFromLast)}</span>
+        </div>
+        <div class="field">
+          <span class="label">Avg ${analytics.direction === 'up' ? 'gain' : 'loss'} (${analytics.direction === 'up' ? analytics.gainCount : analytics.lossCount} runs)</span>
+          <span class="value ${avgRefCls}">${fmtPct(avgRefVal)}</span>
+        </div>
+        <div class="field">
+          <span class="label">% of avg</span>
+          <span class="value">${(analytics.ratio * 100).toFixed(0)}%</span>
+        </div>
+        <div class="verdict">${verdictText(analytics)}</div>
+      </div>
+    `;
+  }
+
+  const chartHtml = renderChart(rows, pivots, analytics);
+  const tableRows = pivots.map(p => `
+    <tr>
+      <td class="label ${p.label}">${p.label}</td>
+      <td>${fmtDate(p.date)}</td>
+      <td class="num">${fmtPrice(p.price)}</td>
+      <td class="num pct ${p.pct == null ? '' : (p.pct >= 0 ? 'pos' : 'neg')}">${fmtPct(p.pct)}</td>
+    </tr>
+  `).join('');
+
+  body.innerHTML = `
+    ${bannerHtml}
+    <div class="chart-wrap">${chartHtml}</div>
+    <details class="pivot-table">
+      <summary>Pivot table (${pivots.length} entries)</summary>
+      <table class="pivots">
+        <thead><tr><th>Type</th><th>Date</th><th>Price</th><th>Move from prior</th></tr></thead>
+        <tbody>${tableRows}</tbody>
+      </table>
+    </details>
+  `;
+}
+
+function renderSignalsPanel() {
+  const panel = document.getElementById(`panel-${safeId('__signals__')}`);
+  const upRows = [];
+  const downRows = [];
+
+  for (const [sheetName, results] of Object.entries(allResults)) {
+    for (const [ticker, r] of Object.entries(results)) {
+      const a = r.analytics;
+      if (!a || !a.direction) continue;
+      const row = { sheetName, ticker, a, sectionId: `sec-${safeId(sheetName)}-${ticker}` };
+      if (a.direction === 'up') upRows.push(row); else downRows.push(row);
+    }
+  }
+  upRows.sort((x, y) => y.a.ratio - x.a.ratio);
+  downRows.sort((x, y) => y.a.ratio - x.a.ratio);
+
+  const signalingCount = [...upRows, ...downRows].filter(r =>
+    r.a.signal === 'at-target' || r.a.signal === 'extended'
+  ).length;
+  document.getElementById('signal-count').textContent = signalingCount;
+
+  const intro = `
+    <div class="signals-intro">
+      <strong>How this works.</strong> For each ticker, the system reads your detected pivot history and computes
+      the average historical run-up (Low to next High) and average run-down (High to next Low).
+      Today's price is then compared against the most recent pivot. The <strong>% of avg</strong> bar shows where
+      this run sits relative to your historical average. At <strong>100%+</strong>, the run has reached the typical
+      size — that's your inflection zone for take profits or buy entries. At <strong>130%+</strong>, the move is
+      stretched. Click any row to jump to that ticker's chart.
+    </div>
+  `;
+
+  if (upRows.length === 0 && downRows.length === 0) {
+    panel.innerHTML = intro + `<div class="signals-empty">No tickers have completed enough pivots to compute averages. Drop some CSVs and click Detect pivots.</div>`;
+    return;
+  }
+
+  const renderRow = (r) => {
+    const a = r.a;
+    const arrow = a.direction === 'up' ? '↑' : '↓';
+    const cls = `signal-row ${a.direction} ${a.signal}`;
+    // Gauge fill: cap at 200% width visually, mark 100% line
+    const fillPct = Math.min(200, Math.max(0, a.ratio * 100));
+    const markerPos = 50; // 100% sits at half of 200% scale
+    const refMove = a.direction === 'up' ? a.avgGain : a.avgLoss;
+    const moveRange = `${fmtPrice(a.last.price)} → ${fmtPrice(a.currentPrice)}`;
+    const moveLine = `${fmtPct(a.moveFromLast)} from ${a.last.label.toLowerCase()} ${fmtDate(a.last.date)} · avg ${fmtPct(refMove)}`;
+    return `
+      <div class="${cls}" data-sheet="${r.sheetName}" data-section="${r.sectionId}">
+        <div class="sym">${r.ticker}</div>
+        <div class="desc">
+          ${verdictText(a)}<br>
+          <small>${moveRange}</small><br>
+          <small>${moveLine}</small>
+        </div>
+        <div class="ratio">${arrow} ${(a.ratio * 100).toFixed(0)}%</div>
+        <div class="gauge">
+          <div class="fill ${a.direction}" style="width: ${fillPct / 2}%"></div>
+          <div class="marker" style="left: ${markerPos}%"></div>
+        </div>
+      </div>
+    `;
+  };
+
+  panel.innerHTML = intro + `
+    <div class="signals-grid">
+      <div class="signal-group">
+        <h3>Up-runs <span class="subhead">${upRows.length} tickers, sorted by % of avg gain</span></h3>
+        ${upRows.length ? upRows.map(renderRow).join('') : '<div class="empty">No tickers in an up-run.</div>'}
+      </div>
+      <div class="signal-group">
+        <h3>Down-runs <span class="subhead">${downRows.length} tickers, sorted by % of avg loss</span></h3>
+        ${downRows.length ? downRows.map(renderRow).join('') : '<div class="empty">No tickers in a down-run.</div>'}
+      </div>
+    </div>
+  `;
+
+  panel.querySelectorAll('.signal-row').forEach(row => {
+    row.addEventListener('click', () => {
+      window._scrollTo = row.dataset.section;
+      activateTab(row.dataset.sheet);
+    });
+  });
+}
+
+function run() {
+  for (const k of Object.keys(allResults)) delete allResults[k];
+  const startDate = new Date(startDateEl.value + 'T00:00:00Z');
+  const reversalBoxes = parseInt(reversalBoxesEl.value, 10) || 5;
+  log('');
+  log(`Detecting pivots from ${startDateEl.value} with ${reversalBoxes}-box reversal...`);
+  let totalPivots = 0;
+
+  for (const [sheetName, tickers] of Object.entries(SHEETS)) {
+    log(`\n[${sheetName}]`);
+    for (const [ticker, header, box] of tickers) {
+      const f = uploadedFiles[ticker];
+      if (!f) {
+        log(`  ${ticker}: no CSV uploaded`, 'warn');
+        renderTickerResult(sheetName, ticker, [], [], null);
+        continue;
+      }
+      const filtered = f.rows.filter(r => r.date >= startDate);
+      if (!filtered.length) {
+        log(`  ${ticker}: no data after start date`, 'warn');
+        renderTickerResult(sheetName, ticker, [], [], null);
+        continue;
+      }
+      const dates = filtered.map(r => r.date);
+      const highs = filtered.map(r => r.high);
+      const lows  = filtered.map(r => r.low);
+      const pivots = detectPivots(highs, lows, dates, box, reversalBoxes);
+      const analytics = computeAnalytics(pivots, filtered[filtered.length - 1]);
+      allResults[sheetName] = allResults[sheetName] || {};
+      allResults[sheetName][ticker] = { config: [ticker, header, box], pivots, rows: filtered, analytics };
+      renderTickerResult(sheetName, ticker, filtered, pivots, analytics);
+      totalPivots += pivots.length;
+      const ratioPart = analytics?.ratio != null ? ` [${(analytics.ratio*100).toFixed(0)}% of avg]` : '';
+      log(`  ${ticker}: ${pivots.length} pivots, last ${analytics?.last?.label || '-'} ${analytics?.last ? fmtDate(analytics.last.date) : '-'}${ratioPart}`, 'ok');
+    }
+    const sId = safeId(sheetName);
+    const counted = Object.values(allResults[sheetName] || {}).reduce((s, r) => s + r.pivots.length, 0);
+    const countEl = document.getElementById(`count-${sId}`);
+    if (countEl) countEl.textContent = `(${counted})`;
+  }
+
+  renderSignalsPanel();
+  log(`\nDone. ${totalPivots} pivots across all sheets.`, 'ok');
+  // Append run timestamp to the existing CSV-loaded count
+  const loaded = Object.keys(uploadedFiles).filter(t => findTickerInConfig(t)).length;
+  const total = Object.values(SHEETS).reduce((s, ts) => s + ts.length, 0);
+  statusEl.textContent = `${loaded} of ${total} loaded · last run ${new Date().toLocaleTimeString()}`;
+  dlBtn.disabled = totalPivots === 0;
+}
+
+// ============================================================
+// EXCEL OUTPUT
+// ============================================================
+function buildExcel() {
+  const wb = XLSX.utils.book_new();
+
+  // Add a Signals summary sheet first
+  const sigRows = [['Ticker', 'Sheet', 'Direction', 'Last Pivot', 'Last Date', 'Last Price', 'Current Price', 'Move %', 'Avg Move %', '% of Avg', 'Signal']];
+  for (const [sheetName, results] of Object.entries(allResults)) {
+    for (const [ticker, r] of Object.entries(results)) {
+      const a = r.analytics;
+      if (!a || !a.direction) continue;
+      sigRows.push([
+        ticker, sheetName, a.direction,
+        a.last.label, a.last.date, a.last.price,
+        a.currentPrice, a.moveFromLast,
+        a.direction === 'up' ? a.avgGain : a.avgLoss,
+        a.ratio, a.signal
+      ]);
+    }
+  }
+  // Sort signals: at-target/extended first, by ratio desc
+  const header = sigRows[0];
+  const data = sigRows.slice(1).sort((a, b) => {
+    const aSig = (a[10] === 'extended' || a[10] === 'at-target') ? 1 : 0;
+    const bSig = (b[10] === 'extended' || b[10] === 'at-target') ? 1 : 0;
+    if (aSig !== bSig) return bSig - aSig;
+    return b[9] - a[9];
+  });
+  const sigSheet = XLSX.utils.aoa_to_sheet([header, ...data], { cellDates: true });
+  sigSheet['!cols'] = [{wch:8},{wch:14},{wch:10},{wch:10},{wch:11},{wch:11},{wch:11},{wch:9},{wch:10},{wch:9},{wch:11}];
+  // Format the data rows
+  const sigRange = XLSX.utils.decode_range(sigSheet['!ref']);
+  for (let R = 1; R <= sigRange.e.r; R++) {
+    const dCell = sigSheet[XLSX.utils.encode_cell({r:R,c:4})];
+    if (dCell?.t === 'd') dCell.z = 'yyyy-mm-dd';
+    for (const c of [5,6]) {
+      const cell = sigSheet[XLSX.utils.encode_cell({r:R,c})];
+      if (cell && typeof cell.v === 'number') cell.z = '"$"#,##0.00';
+    }
+    for (const c of [7,8,9]) {
+      const cell = sigSheet[XLSX.utils.encode_cell({r:R,c})];
+      if (cell && typeof cell.v === 'number') cell.z = '0.0%';
+    }
+  }
+  XLSX.utils.book_append_sheet(wb, sigSheet, 'Signals');
+
+  // Per-sheet pivot blocks
+  for (const [sheetName, results] of Object.entries(allResults)) {
+    const tickers = SHEETS[sheetName];
+    if (!tickers || tickers.length === 0) continue;
+    const maxPivots = Math.max(0, ...tickers.map(([t]) => (results[t]?.pivots?.length || 0)));
+    const pivotRowCount = 4 + Math.ceil(Math.max(0, maxPivots - 1) / 2) * 3 + 4;
+    const totalRows = pivotRowCount + 16;
+    const cols = 1 + 4 * tickers.length;
+    const rows = [];
+    for (let r = 0; r < totalRows; r++) rows.push(new Array(cols).fill(''));
+
+    tickers.forEach(([ticker, header, box], i) => {
+      const c = 1 + i * 4;
+      rows[0][c] = header;
+      rows[1][c] = `${(box * 100).toFixed(0)}% Percentile`;
+    });
+    rows[3][0] = 'Breakout';
+
+    tickers.forEach(([ticker], i) => {
+      const c = 1 + i * 4;
+      const piv = results[ticker]?.pivots || [];
+      if (!piv.length) return;
+      rows[3][c] = piv[0].date;
+      rows[3][c + 1] = piv[0].price;
+      for (let k = 1; k < piv.length; k++) {
+        const isHigh = (k % 2 === 1);
+        const rowIdx = isHigh ? 5 + 3 * Math.floor((k - 1) / 2) : 6 + 3 * Math.floor((k - 2) / 2);
+        if (!rows[rowIdx][0]) rows[rowIdx][0] = isHigh ? 'High' : 'Low';
+        rows[rowIdx][c]     = piv[k].date;
+        rows[rowIdx][c + 1] = piv[k].price;
+        rows[rowIdx][c + 2] = piv[k].pct;
+      }
+    });
+
+    const statsRow = pivotRowCount + 2;
+    const statsHeaders = ['Ticker','Box','Pivots','Avg Gain','Max Gain','Avg Loss','Max Loss','Last Pivot','Last Date','Last Price','Current Price','Move %','% of Avg','Signal'];
+    statsHeaders.forEach((h, i) => rows[statsRow][i] = h);
+    tickers.forEach(([ticker, header, box], i) => {
+      const r = statsRow + 1 + i;
+      const piv = results[ticker]?.pivots || [];
+      const a = results[ticker]?.analytics;
+      if (!piv.length || !a) { rows[r][0] = ticker; return; }
+      rows[r][0] = ticker;
+      rows[r][1] = box;
+      rows[r][2] = piv.length;
+      rows[r][3] = a.avgGain ?? '';
+      rows[r][4] = a.maxGain ?? '';
+      rows[r][5] = a.avgLoss ?? '';
+      rows[r][6] = a.minLoss ?? '';
+      rows[r][7] = a.last.label;
+      rows[r][8] = a.last.date;
+      rows[r][9] = a.last.price;
+      rows[r][10] = a.currentPrice;
+      rows[r][11] = a.moveFromLast;
+      rows[r][12] = a.ratio ?? '';
+      rows[r][13] = a.signal;
+    });
+
+    const ws = XLSX.utils.aoa_to_sheet(rows, { cellDates: true });
+    ws['!cols'] = [{ wch: 10 }];
+    tickers.forEach(() => ws['!cols'].push({ wch: 12 }, { wch: 10 }, { wch: 9 }, { wch: 2 }));
+
+    const range = XLSX.utils.decode_range(ws['!ref']);
+    for (let R = 0; R <= range.e.r; R++) {
+      for (let C = 0; C <= range.e.c; C++) {
+        const cell = ws[XLSX.utils.encode_cell({ r: R, c: C })];
+        if (!cell) continue;
+        if (R >= 3 && R < pivotRowCount && C >= 1) {
+          const offset = (C - 1) % 4;
+          if (offset === 0 && cell.t === 'd') cell.z = 'yyyy-mm-dd';
+          else if (offset === 1 && typeof cell.v === 'number') cell.z = '"$"#,##0.00';
+          else if (offset === 2 && typeof cell.v === 'number') cell.z = '0.0%;[Red](0.0%)';
+        }
+        if (R > statsRow) {
+          if (C === 1 && typeof cell.v === 'number') cell.z = '0%';
+          if ([3,4,5,6,11,12].includes(C) && typeof cell.v === 'number') cell.z = '0.0%';
+          if (C === 8 && cell.t === 'd') cell.z = 'yyyy-mm-dd';
+          if ([9,10].includes(C) && typeof cell.v === 'number') cell.z = '"$"#,##0.00';
+        }
+      }
+    }
+    XLSX.utils.book_append_sheet(wb, ws, sheetName);
+  }
+  XLSX.writeFile(wb, `Pivot_Detector_${new Date().toISOString().slice(0,10)}.xlsx`);
+}
+
+runBtn.addEventListener('click', run);
+dlBtn.addEventListener('click', buildExcel);
+renderTabs();
+renderTickerGrid();
+renderConfigDump();
+</script>
+</body>
+</html>
