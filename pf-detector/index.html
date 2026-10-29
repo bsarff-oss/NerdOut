@@ -141,15 +141,44 @@
   }
 
   /* --- Log (collapsed by default) --- */
-  details.log-wrap {
+  details.log-wrap,
+  details.tickers-wrap {
     margin-bottom: 18px; font-size: 13px;
   }
-  details.log-wrap summary {
+  details.log-wrap summary,
+  details.tickers-wrap summary {
     cursor: pointer; color: var(--bluegray);
-    font-style: italic; padding: 2px 0;
+    font-style: italic; padding: 4px 0;
     user-select: none;
   }
-  details.log-wrap summary:hover { color: var(--navy); }
+  details.tickers-wrap summary {
+    font-style: normal; color: var(--navy); font-weight: bold;
+    font-size: 15px;
+  }
+  details.log-wrap summary:hover,
+  details.tickers-wrap summary:hover { color: var(--navy); }
+  details.tickers-wrap[open] summary { margin-bottom: 10px; }
+  .ticker-summary {
+    margin-left: 8px; color: var(--bluegray);
+    font-weight: normal; font-size: 13px;
+    font-family: 'SF Mono', monospace;
+  }
+
+  /* --- Back to top button --- */
+  .back-to-top {
+    position: fixed; bottom: 28px; right: 28px;
+    width: 48px; height: 48px; border-radius: 50%;
+    background: var(--navy); color: white;
+    border: none; cursor: pointer;
+    font-size: 22px; font-family: Georgia, serif;
+    box-shadow: 0 3px 10px rgba(0,0,0,0.2);
+    display: none; align-items: center; justify-content: center;
+    z-index: 100; transition: background 0.15s, opacity 0.2s;
+    opacity: 0.85;
+  }
+  .back-to-top:hover { background: var(--bluegray); opacity: 1; }
+  .back-to-top.visible { display: flex; }
+
   .log {
     background: white; border: 1px solid var(--rule);
     padding: 10px 14px; font-family: 'SF Mono', Menlo, Consolas, monospace;
@@ -393,31 +422,28 @@
 </header>
 
 <div class="toolbar">
-  <button id="tiingoBtn" class="primary">Pull from Tiingo</button>
-  <button id="browseBtn" class="secondary">Or load CSVs</button>
-  <input type="file" id="fileInput" accept=".csv" multiple style="display:none">
+  <label>Password
+    <input type="password" id="accessPw" placeholder="Shared password" style="width: 180px; margin-left: 6px;">
+  </label>
+  <label style="display:flex; align-items:center; gap:6px;">
+    <input type="checkbox" id="rememberToken" checked> Remember
+  </label>
   <div class="sep"></div>
   <label>Start <input type="date" id="startDate" value="2012-01-01"></label>
   <label>Reversal <input type="number" id="reversalBoxes" value="5" min="2" max="10" step="1"></label>
-  <button id="run" disabled>Detect pivots</button>
+  <div class="sep"></div>
+  <button id="mainAction" class="primary">Pull &amp; detect</button>
   <button id="download" class="secondary" disabled>Download Excel</button>
   <button id="clear" class="secondary">Clear</button>
   <span class="status" id="status">No data loaded yet</span>
 </div>
 
-<div class="toolbar" id="tiingoBar" style="display:none">
-  <label style="flex:1">Access password
-    <input type="password" id="accessPw" placeholder="Enter the shared password" style="width: 100%; max-width: 320px; margin-left: 6px;">
-  </label>
-  <label style="display:flex; align-items:center; gap:6px;">
-    <input type="checkbox" id="rememberToken" checked> Remember
-  </label>
-  <button id="tiingoStart" class="primary">Start pull</button>
-  <button id="tiingoCancel" class="secondary">Cancel</button>
-  <span class="status" id="tiingoStatus"></span>
-</div>
+<input type="file" id="fileInput" accept=".csv" multiple style="display:none">
 
-<div class="ticker-grid" id="tickerGrid"></div>
+<details class="tickers-wrap" id="tickersWrap" open>
+  <summary>Tickers <span id="tickerSummary" class="ticker-summary"></span></summary>
+  <div class="ticker-grid" id="tickerGrid"></div>
+</details>
 
 <details class="log-wrap">
   <summary>Show log</summary>
@@ -438,6 +464,8 @@
 </details>
 
 </div>
+
+<button class="back-to-top" id="backToTop" title="Back to top" aria-label="Back to top">↑</button>
 
 <script>
 // ============================================================
@@ -724,32 +752,28 @@ function verdictText(a) {
 // ============================================================
 const uploadedFiles = {};
 const allResults = {};
-const browseBtn = document.getElementById('browseBtn');
-const tiingoBtn = document.getElementById('tiingoBtn');
-const tiingoBar = document.getElementById('tiingoBar');
-const tiingoTokenEl = document.getElementById('accessPw');
+const accessPwEl = document.getElementById('accessPw');
 const rememberTokenEl = document.getElementById('rememberToken');
-const tiingoStartBtn = document.getElementById('tiingoStart');
-const tiingoCancelBtn = document.getElementById('tiingoCancel');
-const tiingoStatusEl = document.getElementById('tiingoStatus');
+const mainActionBtn = document.getElementById('mainAction');
 const fileInput = document.getElementById('fileInput');
+const tickersWrapEl = document.getElementById('tickersWrap');
+const tickerSummaryEl = document.getElementById('tickerSummary');
 const tickerGridEl = document.getElementById('tickerGrid');
 const dropOverlay = document.getElementById('dropOverlay');
 const statusEl = document.getElementById('status');
 const logEl = document.getElementById('log');
 const tabsEl = document.getElementById('tabs');
 const panelsEl = document.getElementById('panels');
-const runBtn = document.getElementById('run');
 const dlBtn = document.getElementById('download');
 const clearBtn = document.getElementById('clear');
-const metaEl = document.getElementById('status');
+const backToTopBtn = document.getElementById('backToTop');
 const startDateEl = document.getElementById('startDate');
 const reversalBoxesEl = document.getElementById('reversalBoxes');
 
 // Restore saved access password if present
 try {
   const saved = localStorage.getItem('pf_access_pw');
-  if (saved) tiingoTokenEl.value = saved;
+  if (saved) accessPwEl.value = saved;
 } catch (e) {}
 
 // ============================================================
@@ -785,13 +809,14 @@ async function fetchTiingoTicker(ticker, accessPw, startDate) {
 }
 
 async function pullAllFromTiingo() {
-  const accessPw = tiingoTokenEl.value.trim();
+  const accessPw = accessPwEl.value.trim();
   if (!accessPw) {
-    tiingoStatusEl.textContent = 'Access password required.';
-    tiingoStatusEl.style.color = 'var(--red)';
-    return;
+    statusEl.textContent = 'Password required.';
+    statusEl.style.color = 'var(--red)';
+    accessPwEl.focus();
+    return false;
   }
-  tiingoStatusEl.style.color = '';
+  statusEl.style.color = '';
   if (rememberTokenEl.checked) {
     try { localStorage.setItem('pf_access_pw', accessPw); } catch (e) {}
   } else {
@@ -806,7 +831,8 @@ async function pullAllFromTiingo() {
   }
 
   tiingoAbort = false;
-  tiingoStartBtn.disabled = true;
+  mainActionBtn.disabled = true;
+  mainActionBtn.textContent = 'Pulling...';
   const startDate = startDateEl.value;
   let done = 0, failed = [];
   logEl.textContent = '';
@@ -814,7 +840,7 @@ async function pullAllFromTiingo() {
 
   for (const ticker of allTickers) {
     if (tiingoAbort) { log('Cancelled by user.', 'warn'); break; }
-    tiingoStatusEl.textContent = `Fetching ${ticker} (${done + 1} of ${allTickers.length})...`;
+    statusEl.textContent = `Fetching ${ticker} (${done + 1} of ${allTickers.length})...`;
     try {
       const rows = await fetchTiingoTicker(ticker, accessPw, startDate);
       uploadedFiles[ticker] = { filename: `Tiingo: ${ticker}`, rows, matched: true };
@@ -828,21 +854,18 @@ async function pullAllFromTiingo() {
     await new Promise(r => setTimeout(r, 150));
   }
 
-  tiingoStartBtn.disabled = false;
-  tiingoStatusEl.textContent = tiingoAbort
-    ? `Cancelled at ${done} of ${allTickers.length}`
-    : `Done. ${done - failed.length} of ${allTickers.length} loaded.`
-      + (failed.length ? ` Failed: ${failed.join(', ')}` : '');
+  mainActionBtn.disabled = false;
+  mainActionBtn.textContent = 'Pull & detect';
+  return done > 0 && (done - failed.length) > 0;
 }
 
-tiingoBtn.addEventListener('click', () => {
-  tiingoBar.style.display = (tiingoBar.style.display === 'none') ? 'flex' : 'none';
-  if (tiingoBar.style.display === 'flex' && !tiingoTokenEl.value) tiingoTokenEl.focus();
-});
-tiingoStartBtn.addEventListener('click', pullAllFromTiingo);
-tiingoCancelBtn.addEventListener('click', () => {
-  tiingoAbort = true;
-  tiingoBar.style.display = 'none';
+// Single-button flow: pull data from Tiingo, then detect pivots automatically.
+mainActionBtn.addEventListener('click', async () => {
+  const ok = await pullAllFromTiingo();
+  if (ok && !tiingoAbort) {
+    tickersWrapEl.open = false; // collapse the ticker list once data is loaded
+    run(); // detect pivots immediately after a successful pull
+  }
 });
 
 function log(msg, cls) {
@@ -899,8 +922,8 @@ function renderTickerGrid() {
     tickerGridEl.appendChild(note);
   }
 
-  statusEl.textContent = `${totalLoaded} of ${totalConfigured} CSVs loaded`;
-  runBtn.disabled = totalLoaded === 0;
+  statusEl.textContent = `${totalLoaded} of ${totalConfigured} loaded`;
+  tickerSummaryEl.textContent = `(${totalLoaded} of ${totalConfigured} loaded)`;
 }
 
 async function handleFiles(fileList) {
@@ -927,10 +950,10 @@ async function handleFiles(fileList) {
   renderTickerGrid();
 }
 
-browseBtn.addEventListener('click', () => fileInput.click());
+// CSV upload kept as a hidden fallback. Drag-and-drop onto the window still works.
 fileInput.addEventListener('change', e => {
   handleFiles(e.target.files);
-  fileInput.value = ''; // reset so the same file can be re-uploaded
+  fileInput.value = '';
 });
 
 // Window-wide drag and drop
@@ -963,6 +986,8 @@ clearBtn.addEventListener('click', () => {
   logEl.textContent = '';
   renderTabs();
   dlBtn.disabled = true;
+  tickersWrapEl.open = true;
+  window.scrollTo({ top: 0, behavior: 'smooth' });
 });
 
 function renderConfigDump() {
@@ -1385,8 +1410,17 @@ function buildExcel() {
   XLSX.writeFile(wb, `Pivot_Detector_${new Date().toISOString().slice(0,10)}.xlsx`);
 }
 
-runBtn.addEventListener('click', run);
 dlBtn.addEventListener('click', buildExcel);
+
+// Back-to-top button: show after scrolling 300px, scroll to top on click
+window.addEventListener('scroll', () => {
+  if (window.scrollY > 300) backToTopBtn.classList.add('visible');
+  else backToTopBtn.classList.remove('visible');
+});
+backToTopBtn.addEventListener('click', () => {
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+});
+
 renderTabs();
 renderTickerGrid();
 renderConfigDump();
