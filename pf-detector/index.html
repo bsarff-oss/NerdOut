@@ -322,7 +322,7 @@
 
   .status-banner {
     display: grid;
-    grid-template-columns: auto auto auto auto 1fr;
+    grid-template-columns: auto auto auto auto auto 1fr;
     gap: 22px;
     padding: 12px 16px; margin-bottom: 12px;
     background: var(--tan-light);
@@ -352,13 +352,16 @@
   }
   .status-banner .field .value.pos { color: var(--green); }
   .status-banner .field .value.neg { color: var(--red); }
+  /* Unified verdict styling: all tickers use the same bold treatment, color varies by direction */
   .status-banner .verdict {
     align-self: center; justify-self: end;
-    text-align: right; font-style: italic;
-    color: var(--bluegray); font-size: 14px;
+    text-align: right; font-weight: bold; font-size: 15px;
+    color: var(--bluegray);
   }
-  .status-banner.extended-up .verdict { color: var(--green); font-weight: bold; font-style: normal; font-size: 15px; }
-  .status-banner.extended-down .verdict { color: var(--red); font-weight: bold; font-style: normal; font-size: 15px; }
+  .status-banner.up .verdict,
+  .status-banner.extended-up .verdict { color: var(--green); }
+  .status-banner.down .verdict,
+  .status-banner.extended-down .verdict { color: var(--red); }
 
   .chart-wrap {
     background: var(--paper); border: 1px solid var(--rule);
@@ -681,18 +684,15 @@ function renderChart(rows, pivots, analytics, width = 1100, height = 280) {
     pivotMarkers += `<circle cx="${cx}" cy="${cy}" r="${r}" class="${cls}"><title>${tip}</title></circle>`;
   }
 
-  // Target line from last pivot date to right edge
+  // Target line from last pivot date to right edge (label now lives in the status banner)
   let targetMarkup = '';
   if (analytics?.target && analytics.last) {
     const x1 = x(analytics.last.date.getTime()).toFixed(1);
     const x2 = (w - padR).toFixed(1);
     const yT = y(analytics.target).toFixed(1);
     const cls = analytics.direction === 'up' ? 'chart-target-up' : 'chart-target-down';
-    const labelCls = analytics.direction === 'up' ? 'chart-target-up' : 'chart-target-down';
-    const labelText = `Avg target $${analytics.target.toFixed(2)}`;
     targetMarkup = `
-      <line class="${cls}" x1="${x1}" x2="${x2}" y1="${yT}" y2="${yT}"/>
-      <text class="chart-target-label" fill="${analytics.direction === 'up' ? '#2d6a4f' : '#b03a2e'}" x="${x2}" y="${(parseFloat(yT) - 4).toFixed(1)}" text-anchor="end">${labelText}</text>
+      <line class="${cls}" x1="${x1}" x2="${x2}" y1="${yT}" y2="${yT}"><title>Avg target $${analytics.target.toFixed(2)}</title></line>
     `;
     // Current price marker
     const lastRow = rows[rows.length - 1];
@@ -1113,6 +1113,10 @@ function renderTickerResult(sheetName, ticker, rows, pivots, analytics) {
         <div class="field">
           <span class="label">% of avg</span>
           <span class="value">${(analytics.ratio * 100).toFixed(0)}%</span>
+        </div>
+        <div class="field">
+          <span class="label">Avg target</span>
+          <span class="value">$${analytics.target.toFixed(2)}</span>
         </div>
         <div class="verdict">${verdictText(analytics)}</div>
       </div>
