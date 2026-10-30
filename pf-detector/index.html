@@ -315,6 +315,14 @@
   .ticker-head .sym {
     font-size: 22px; font-weight: bold; color: var(--navy); letter-spacing: 1px;
   }
+  .ticker-head .current-price {
+    font-size: 20px; font-weight: bold; color: var(--navy);
+    font-family: 'SF Mono', monospace;
+  }
+  .ticker-head .current-price .asof {
+    font-size: 12px; font-weight: normal; color: var(--bluegray);
+    font-family: Georgia, serif; font-style: italic; margin-left: 6px;
+  }
   .ticker-head .box { color: var(--tan-deep); font-size: 14px; }
   .ticker-head .summary {
     margin-left: auto; font-size: 13px;
@@ -1069,6 +1077,7 @@ function renderTabs() {
         sec.innerHTML = `
           <div class="ticker-head">
             <span class="sym">${ticker}</span>
+            <span class="current-price" id="price-${safeId(name)}-${ticker}"></span>
             <span class="box">${(box * 100).toFixed(0)}% box · ${header}</span>
             <span class="summary" id="sum-${safeId(name)}-${ticker}"></span>
           </div>
@@ -1085,11 +1094,22 @@ function renderTickerResult(sheetName, ticker, rows, pivots, analytics) {
   const sId = safeId(sheetName);
   const body = document.getElementById(`body-${sId}-${ticker}`);
   const sum = document.getElementById(`sum-${sId}-${ticker}`);
+  const priceEl = document.getElementById(`price-${sId}-${ticker}`);
   const sec = document.getElementById(`sec-${sId}-${ticker}`);
   if (!body) return;
 
   // Reset signal class on section
   sec.classList.remove('signal-up', 'signal-down');
+
+  // Current price display next to ticker symbol
+  if (priceEl) {
+    if (rows && rows.length) {
+      const last = rows[rows.length - 1];
+      priceEl.innerHTML = `${fmtPrice(last.close)} <span class="asof">as of ${fmtDate(last.date)}</span>`;
+    } else {
+      priceEl.innerHTML = '';
+    }
+  }
 
   if (!pivots || pivots.length === 0) {
     body.innerHTML = '<span class="empty">No pivots detected.</span>';
