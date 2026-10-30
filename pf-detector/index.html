@@ -96,7 +96,7 @@
   }
   .ticker-chips {
     display: grid; gap: 6px;
-    grid-template-columns: repeat(auto-fill, minmax(115px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
   }
   .ticker-chip {
     display: flex; align-items: center; gap: 8px;
@@ -115,9 +115,10 @@
   .ticker-chip .sym {
     font-weight: bold; color: var(--navy); letter-spacing: 0.5px;
   }
-  .ticker-chip .count {
-    margin-left: auto; font-size: 11px;
-    color: var(--bluegray); font-family: 'SF Mono', monospace;
+  .ticker-chip .price {
+    margin-left: auto; font-size: 13px;
+    color: var(--navy); font-family: 'SF Mono', monospace;
+    font-weight: bold;
   }
   .unmatched-note {
     margin: 8px 0; padding: 8px 12px;
@@ -894,19 +895,37 @@ function renderTickerGrid() {
       const f = uploadedFiles[ticker];
       if (f) matchedTickers.add(ticker);
       const cls = f ? 'loaded' : 'missing';
-      const count = f ? `<span class="count">${f.rows.length.toLocaleString()}</span>` : '';
+      let priceHtml = '';
+      let titleText = f ? f.filename : 'No data loaded';
+      if (f && f.rows.length) {
+        const last = f.rows[f.rows.length - 1];
+        const priceStr = '$' + last.close.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        const asOf = last.date.toISOString().slice(0, 10);
+        priceHtml = `<span class="price">${priceStr}</span>`;
+        titleText = `${ticker} last close ${priceStr} as of ${asOf} (${f.rows.length.toLocaleString()} rows)`;
+      }
       chipsHtml += `
-        <div class="ticker-chip ${cls}" title="${f ? f.filename : 'No CSV uploaded'}">
+        <div class="ticker-chip ${cls}" title="${titleText}">
           <span class="dot"></span>
           <span class="sym">${ticker}</span>
-          ${count}
+          ${priceHtml}
         </div>
       `;
+    }
+    // Find the most recent "as of" date across loaded tickers in this sheet
+    let asOfLine = '';
+    const loadedTickers = tickers.filter(([t]) => uploadedFiles[t] && uploadedFiles[t].rows.length);
+    if (loadedTickers.length) {
+      const latestMs = Math.max(...loadedTickers.map(([t]) => {
+        const r = uploadedFiles[t].rows;
+        return r[r.length - 1].date.getTime();
+      }));
+      asOfLine = ` · data through ${new Date(latestMs).toISOString().slice(0, 10)}`;
     }
     group.innerHTML = `
       <div class="ticker-group-head">
         <span class="name">${sheetName}</span>
-        <span class="progress">${loadedInSheet} of ${tickers.length} loaded</span>
+        <span class="progress">${loadedInSheet} of ${tickers.length} loaded${asOfLine}</span>
       </div>
       <div class="ticker-chips">${chipsHtml}</div>
     `;
